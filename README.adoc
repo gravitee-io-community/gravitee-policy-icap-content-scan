@@ -1,0 +1,290 @@
+= ICAP Content Scan
+
+:page-version: 0.1.0
+
+You can use the `icap-content-scan` policy to scan HTTP request and/or response bodies (including attachments) through a 3rd-party ICAP anti-virus or anti-malware service.
+
+The policy requires a gateway **ICAP** resource (`gravitee-resource-icap` **0.1.0** or compatible) and Gravitee APIM 4.x. Plugin id: `icap-content-scan` (policy).
+
+== Build and deployment
+
+[source,bash]
+----
+mvn clean package
+----
+
+Artifact: `target/gravitee-policy-icap-content-scan-0.1.0.zip`
+
+* **Gateway** — copy the ZIP to `plugins/policies/` and restart (or hot-deploy per your environment).
+* **Management API** — copy the same ZIP to `plugins/policies/` so Policy Studio loads documentation and `schema-form.json`.
+
+Deploy `gravitee-resource-icap-0.1.0.zip` to `plugins/resources/` on the same nodes **before** or together with this policy.
+
+== Phase
+
+[cols="2*", options="header"]
+|===
+^|onRequest
+^|onResponse
+
+^.^| X
+^.^| X
+
+|===
+
+* You may add the policy to both (request and response) flows to scan both directions with the same configuration. The policy selects the correct ICAP method from the gateway phase.  Phase is discovered automatically:
+** Gravitee invokes ICAP `REQMOD` (client upload scanning) when the policy is executed within the `onRequest` phase.
+** Gravitee invokes ICAP `RESPMOD` (backend response scanning) when the policy is executed within the `onResponse` phase.
+* If the ICAP server OPTIONS response does not advertise the required method, scanning is skipped for that phase.
+
+== Description
+
+The policy buffers the HTTP body (up to `maxBodyBytes`), forwards encapsulated HTTP metadata and content to the configured ICAP resource, then:
+
+* **Synchronous mode** — waits for the ICAP verdict before continuing the flow. Can block infected content, apply sanitized bodies returned by ICAP, or log only (`detectOnly`). Webhooks fire after the scan completes and before the flow continues or is blocked.
+* **Asynchronous mode** — forwards content immediately and scans in the background. Threats cannot be blocked retroactively; configure `asyncOnThreat` side effects (`LOG`, `METRIC`, `CONTEXT_ATTRIBUTE`). Webhooks use the same configuration as synchronous mode.
+
+Scan depth is controlled by `scanMode`:
+
+* `AUTO` — RFC 3507 preview-then-continue (default)
+* `QUICK` — preview bytes only (fastest, best-effort)
+* `FULL` — complete body scan
+
+== Prerequisites
+
+1. Deploy `gravitee-resource-icap-0.1.0.zip` and create an ICAP resource in APIM Console (API → Configuration → Resources).
+2. Deploy `gravitee-policy-icap-content-scan-0.1.0.zip` to the **Gateway(s)** and **Management API** (required for Policy Studio documentation and schema).
+3. Reference the ICAP resource from this policy.
+
+== Configuration options
+
+Fields appear in Policy Studio in the order below. *Basic Settings* covers core scanning and webhook behaviour; *Advanced Settings* covers scan depth, body limits, header forwarding, content-modification details, and asynchronous side effects.
+
+=== Basic Settings
+
+[cols="2,1,3", options="header"]
+|===
+| Attribute | Required | Description
+
+| `icapResource`
+| Yes
+| Shared ICAP resource on the gateway. Supports Expression Language. Phase (REQMOD vs RESPMOD) is selected automatically from Request vs Response flow placement.
+
+| `executionMode`
+| No
+| `SYNCHRONOUS` (default) waits for the ICAP verdict before continuing; `ASYNCHRONOUS` forwards content immediately and scans in the background.
+
+| `detectOnly`
+| No
+| Log infected content without blocking the request (synchronous mode only). Default: `false`.
+
+| `failClosedOnIcapError`
+| No
+| Return HTTP `500` when ICAP is unavailable or returns an error (synchronous mode). Default: `true`.
+
+| `blockStatusCode`
+| No
+| HTTP status returned when infected content is blocked in synchronous mode. Default: `403`.
+
+| `blockMessage`
+| No
+| Message returned to the client when infected content is blocked. Default: `Request blocked by ICAP content scan`.
+
+| `enableContentModification`
+| No
+| Apply sanitized or repaired body content returned by the ICAP server in synchronous mode. Requires an ICAP service that supports content modification. Default: `false`.
+
+| `treatModificationAsClean`
+| No
+| When `true` (default), ICAP content modifications are treated as clean and the flow continues. When `false`, a modification is handled like a threat (block or detect-only).
+
+| `webhookEnabled`
+| No
+| Send HTTP webhook notifications for ICAP scan results in both synchronous and asynchronous modes. Default: `false`.
+
+| `webhookOn`
+| No
+| ICAP verdicts that trigger a webhook when webhook is enabled: `CLEAN`, `INFECTED`, `MODIFIED`, `ERROR`. Default: `["INFECTED"]`.
+
+| `webhook`
+| No
+| Webhook delivery settings object (`url`, `method`, `timeoutMs`, `retryCount`, `payloadTemplate`, `headers`). See <<Webhook payload>>.
+
+| `webhook.url`
+| No
+| Destination URL for webhook HTTP requests. Supports Expression Language. Must be set when `webhookEnabled` is `true`.
+
+| `webhook.method`
+| No
+| HTTP method for webhook delivery. Default: `POST`.
+
+| `webhook.timeoutMs`
+| No
+| Webhook HTTP request timeout in milliseconds. Default: `5000`.
+
+| `webhook.retryCount`
+| No
+| Number of retries after the first attempt when delivery fails or returns HTTP `5xx`. Default: `1`.
+
+| `webhook.payloadTemplate`
+| No
+| Optional EL-evaluated string that replaces the default webhook JSON body when set. Leave blank to use the built-in ICAP notification payload. See <<Payload template>>.
+
+| `webhook.headers`
+| No
+| Optional HTTP headers sent with the webhook request. Each entry has `name` and `value` (value supports Expression Language). `Content-Type` defaults to `application/json` when not set.
+
+|===
+
+=== Advanced Settings
+
+[cols="2,1,3", options="header"]
+|===
+| Attribute | Required | Description
+
+| `scanMode`
+| No
+| `AUTO` (default) uses RFC 3507 preview-then-continue; `QUICK` scans preview bytes only; `FULL` sends the entire body.
+
+| `previewBytes`
+| No
+| Preview size used by `QUICK` and `AUTO` scan modes. Default: `4096`.
+
+| `maxBodyBytes`
+| No
+| Maximum request/response body buffered for ICAP scanning. Default: `10485760` (10 MB).
+
+| `failClosedOnOversizeBody`
+| No
+| Return HTTP `413` when the body exceeds `maxBodyBytes` instead of skipping the scan. Default: `false`.
+
+| `modificationParseFailureAction`
+| No
+| Action when ICAP returns modified content that cannot be parsed: `PASS_ORIGINAL` (default) forwards the original body; `FAIL` returns HTTP `500`.
+
+| `modifiableRequestHeaders`
+| No
+| Request headers the policy may update when ICAP returns modified content (REQMOD). Default: `Content-Type`, `Content-Length`, `Content-Disposition`.
+
+| `modifiableResponseHeaders`
+| No
+| Response headers the policy may update when ICAP returns modified content (RESPMOD). Default: `Content-Type`, `Content-Length`, `Content-Disposition`.
+
+| `forwardedRequestHeaders`
+| No
+| Request headers included in encapsulated ICAP HTTP metadata for REQMOD scans. Default: `Content-Type`, `Content-Disposition`.
+
+| `forwardedResponseHeaders`
+| No
+| Response headers included in encapsulated ICAP HTTP metadata for RESPMOD scans. Default: `Content-Type`, `Content-Disposition`.
+
+| `asyncOnThreat`
+| No
+| Side effects when a threat is detected in asynchronous mode: `LOG`, `METRIC`, `CONTEXT_ATTRIBUTE`. Default: all three.
+
+|===
+
+== Configuration example
+
+[source,json]
+----
+{
+  "icap-content-scan": {
+    "icapResource": "my-icap-resource",
+    "executionMode": "SYNCHRONOUS",
+    "scanMode": "AUTO",
+    "previewBytes": 4096,
+    "maxBodyBytes": 10485760,
+    "failClosedOnIcapError": true,
+    "detectOnly": false,
+    "enableContentModification": false,
+    "webhookEnabled": true,
+    "webhookOn": ["INFECTED", "ERROR"],
+    "webhook": {
+      "url": "https://siem.example.com/hooks/icap",
+      "method": "POST",
+      "timeoutMs": 5000
+    },
+    "blockStatusCode": 403,
+    "blockMessage": "Request blocked by ICAP content scan"
+  }
+}
+----
+
+== Webhook payload
+
+When `webhookEnabled` is `true` and the ICAP verdict matches one of the values in `webhookOn`, the policy POSTs a privacy-safe JSON document (no raw body; includes `bodySha256`):
+
+[source,json]
+----
+{
+  "event": "icap.scan.infected",
+  "timestamp": "2026-06-08T12:00:00Z",
+  "verdict": "INFECTED",
+  "threatName": "Eicar-Signature",
+  "message": null,
+  "icapStatusCode": 200,
+  "executionMode": "SYNCHRONOUS",
+  "phase": "REQUEST",
+  "requestId": "...",
+  "method": "POST",
+  "path": "/upload",
+  "host": "api.example.com",
+  "contentType": "application/octet-stream",
+  "bodyBytes": 1024,
+  "bodySha256": "..."
+}
+----
+
+The `event` field reflects the verdict: `icap.scan.clean`, `icap.scan.infected`, `icap.scan.modified`, or `icap.scan.error`.
+
+In synchronous mode, the webhook is sent when the ICAP scan completes — including when the request is blocked with HTTP `403`.
+
+=== Payload template
+
+`webhook.payloadTemplate` is optional. When it is blank or omitted, the policy sends the default JSON document shown above.
+
+When set, the template **replaces** that default payload entirely. The string is evaluated with the Gravitee Expression Language (the same `{#...}` mechanism used for `webhook.url` and header values), and the result is sent as the full HTTP request body.
+
+[source,json]
+----
+"webhook": {
+  "url": "https://siem.example.com/hooks/icap",
+  "method": "POST",
+  "payloadTemplate": "{\"source\":\"gravitee\",\"host\":\"#{request.host}\",\"path\":\"#{request.path}\",\"method\":\"#{request.method}\"}"
+}
+----
+
+Notes:
+
+* You must produce the complete body your receiver expects (JSON, XML, plain text, etc.). The policy does not merge template output with the default ICAP fields.
+* ICAP-specific values (`verdict`, `threatName`, `icapStatusCode`, `bodySha256`, and so on) are only included in the **default** JSON payload. They are not exposed as EL variables in a custom template.
+* Standard request and API context expressions (for example `#{request.host}`, `#{request.path}`, `#{request.method}`) are available through the template engine.
+* Unless you set `Content-Type` in `webhook.headers`, the notifier still defaults to `application/json`.
+
+== Troubleshooting
+
+=== ICAP 405 Method Not Allowed
+
+* Confirm the ICAP **service name** on the resource (e.g. `avscan`, `virus_scan`, etc).
+
+=== HTTP 500 / ICAP scan timeout
+
+When `failClosedOnIcapError` is enabled (default), ICAP connectivity or timeout errors surface as HTTP `500` on the API request. The scan waits on the ICAP **resource** — adjust `readTimeoutMs` there, not on the policy.
+
+* Default resource `readTimeoutMs` is `180000` ms (3 minutes).
+* Increase it on the 3rd-party ICAP resource if your engine needs more time per scan.
+
+=== HTTP 500 / Broken pipe
+
+If the API returns HTTP `500` with `Broken pipe` (or `ICAP connection lost while scanning`), the ICAP server likely closed the TCP connection after a scan while the client tried to reuse a pooled socket.
+
+* On the ICAP resource, keep `reuseConnections` disabled (default).
+
+=== Webhook not firing
+
+* Confirm `webhookEnabled` is `true` (default is `false`).
+* Confirm the ICAP verdict is listed in `webhookOn` (default is `["INFECTED"]` only).
+* Confirm `webhook.url` is set on the policy (not on the ICAP resource).
+* Enable `DEBUG` logging for `io.gravitee.policy.icap` and check for `ICAP webhook skipped` messages.
+

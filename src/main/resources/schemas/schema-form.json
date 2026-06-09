@@ -1,0 +1,217 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["icapResource"],
+  "properties": {
+    "icapResource": {
+      "title": "ICAP resource",
+      "description": "Shared ICAP resource on the gateway.",
+      "type": "string",
+      "x-schema-form": {
+        "type": "resource",
+        "resourceType": "icap"
+      },
+      "gioConfig": {
+        "uiType": "resource-type",
+        "uiTypeProps": {
+          "resourceType": "icap"
+        },
+        "el": true,
+        "banner": {
+          "title": "Policy Placement",
+          "text": "Phase (request phase vs response phase) is discovered automatically from where you place this policy in Policy Studio."
+        }
+      }
+    },
+    "executionMode": {
+      "title": "Execution mode",
+      "description": "Synchronous waits for the ICAP verdict before continuing. Asynchronous forwards content immediately and scans in the background.",
+      "type": "string",
+      "enum": ["SYNCHRONOUS", "ASYNCHRONOUS"],
+      "default": "SYNCHRONOUS"
+    },
+    "detectOnly": {
+      "title": "Detection only",
+      "description": "Log infected content without blocking the request (synchronous mode only).",
+      "type": "boolean",
+      "default": false
+    },
+    "failClosedOnIcapError": {
+      "title": "Fail closed on ICAP error",
+      "description": "Return HTTP 500 when ICAP is unavailable or returns an error (synchronous mode).",
+      "type": "boolean",
+      "default": true
+    },
+    "blockStatusCode": {
+      "title": "Block status code",
+      "description": "HTTP status returned when infected content is blocked in synchronous mode.",
+      "type": "integer",
+      "default": 403
+    },
+    "blockMessage": {
+      "title": "Block message",
+      "description": "Message returned to the client when infected content is blocked.",
+      "type": "string",
+      "default": "Request blocked by ICAP content scan"
+    },
+    "enableContentModification": {
+      "title": "Enable content modification",
+      "description": "Apply sanitized or repaired body content returned by the ICAP server in synchronous mode. Requires an ICAP service that supports content modification.",
+      "type": "boolean",
+      "default": false
+    },
+    "treatModificationAsClean": {
+      "title": "Treat modification as clean",
+      "description": "When enabled, ICAP content modifications are treated as clean and the flow continues. When disabled, a modification is handled like a threat (block or detect-only).",
+      "type": "boolean",
+      "default": true
+    },
+    "webhookEnabled": {
+      "title": "Enable webhook",
+      "description": "Send HTTP webhook notifications for ICAP scan results in both synchronous and asynchronous modes.",
+      "type": "boolean",
+      "default": false
+    },
+    "webhookOn": {
+      "title": "Webhook triggers",
+      "description": "ICAP verdicts that trigger a webhook when webhook is enabled.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["CLEAN", "INFECTED", "MODIFIED", "ERROR"]
+      },
+      "default": ["INFECTED"]
+    },
+    "webhook": {
+      "title": "Webhook",
+      "description": "Webhook URL, method, headers, timeout, retry count, and optional payload template.",
+      "type": "object",
+      "properties": {
+        "url": {
+          "title": "Webhook URL",
+          "type": "string"
+        },
+        "method": {
+          "title": "HTTP method",
+          "type": "string",
+          "default": "POST"
+        },
+        "timeoutMs": {
+          "title": "Timeout (ms)",
+          "type": "integer",
+          "default": 5000
+        },
+        "retryCount": {
+          "title": "Retry count",
+          "type": "integer",
+          "default": 1
+        },
+        "payloadTemplate": {
+          "title": "Payload template",
+          "description": "(Optional) When blank, the policy sends a built-in JSON payload with ICAP verdict and request metadata (verdict, threatName, bodySha256, etc.). When set, this string replaces that default entirely - see documentation for more information.",
+          "type": "string"
+        },
+        "headers": {
+          "title": "Headers",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "scanMode": {
+      "title": "Scan mode",
+      "description": "AUTO uses RFC 3507 preview-then-continue; QUICK scans preview bytes only; FULL sends the entire body.",
+      "type": "string",
+      "enum": ["QUICK", "FULL", "AUTO"],
+      "default": "AUTO",
+      "gioConfig": {
+        "banner": {
+          "title": "Advanced Settings",
+          "text": "Scan mode/depth, body limits, ICAP header forwarding, content-modification details, and asynchronous side effects."
+        }
+      }
+    },
+    "previewBytes": {
+      "title": "Preview bytes",
+      "description": "Preview size used by QUICK and AUTO scan modes.",
+      "type": "integer",
+      "default": 4096
+    },
+    "maxBodyBytes": {
+      "title": "Max body bytes",
+      "description": "Maximum request/response body buffered for ICAP scanning.",
+      "type": "integer",
+      "default": 10485760
+    },
+    "failClosedOnOversizeBody": {
+      "title": "Fail closed on oversize body",
+      "description": "Return HTTP 413 when the body exceeds max body bytes instead of skipping the scan.",
+      "type": "boolean",
+      "default": false
+    },
+    "modificationParseFailureAction": {
+      "title": "Modification parse failure action",
+      "description": "Action when ICAP returns modified content that cannot be parsed.",
+      "type": "string",
+      "enum": ["PASS_ORIGINAL", "FAIL"],
+      "default": "PASS_ORIGINAL"
+    },
+    "modifiableRequestHeaders": {
+      "title": "Modifiable request headers",
+      "description": "Request headers the policy may update when ICAP returns modified content.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": ["Content-Type", "Content-Length", "Content-Disposition"]
+    },
+    "modifiableResponseHeaders": {
+      "title": "Modifiable response headers",
+      "description": "Response headers the policy may update when ICAP returns modified content.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": ["Content-Type", "Content-Length", "Content-Disposition"]
+    },
+    "forwardedRequestHeaders": {
+      "title": "Forwarded request headers",
+      "description": "Request headers included in encapsulated ICAP HTTP metadata for REQMOD scans.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": ["Content-Type", "Content-Disposition"]
+    },
+    "forwardedResponseHeaders": {
+      "title": "Forwarded response headers",
+      "description": "Response headers included in encapsulated ICAP HTTP metadata for RESPMOD scans.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": ["Content-Type", "Content-Disposition"]
+    },
+    "asyncOnThreat": {
+      "title": "Async threat actions",
+      "description": "Side effects when a threat is detected in asynchronous mode.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["LOG", "METRIC", "CONTEXT_ATTRIBUTE"]
+      },
+      "default": ["LOG", "METRIC", "CONTEXT_ATTRIBUTE"]
+    }
+  }
+}
